@@ -1,0 +1,5 @@
+# Ignore the heavy Windows Python engine, but KEEP the uploads folder
+venv/
+__pycache__/
+*.pyc
+.env
