@@ -1,56 +1,31 @@
-# chat_logic.py
 from flask import request
 from flask_socketio import join_room, leave_room, emit
 import database
 
-def register_chat_events(socketio, verify_match_callback=None):
-    
+def register_chat_events(socketio, verify_match_callback):
     @socketio.on('join_room')
-    def on_join(data):
-        # We now expect UUIDs for the room logic, but Names for display
-        room = data['room']         # e.g., "uuid1_uuid2"
-        username = data['username'] # e.g., "Salil"
-        
-        # 🔒 SECURITY CHECK
-        # Extract the two User IDs from the room name
-        try:
-            user1_id, user2_id = room.split('_')
-            
-            if verify_match_callback:
-                is_valid = verify_match_callback(user1_id, user2_id)
-                if not is_valid:
-                    print(f"⛔ BLOCKING: {username} tried to join {room} but is not matched.")
-                    emit('error', {'message': 'You are not matched with this user!'})
-                    return # Stop here
-        except:
-            print(f"⚠️ Room name format warning: {room}")
-
-        # If valid, let them in
-        join_room(room)
-        print(f"👥 {username} joined room: {room}")
-
-        # Load History
-        history = database.get_chat_history(room)
-        emit('load_history', history, room=request.sid)
+    def handle_join(data):
+        room = data.get('room')
+        username = data.get('username')
+        users = room.split('_')
+        if len(users) == 2 and verify_match_callback(users[0], users[1]):
+            join_room(room)
+            print(f"🟢 {username} joined room {room}")
+            emit('chat_history', database.get_chat_history(room), to=request.sid)
 
     @socketio.on('send_message')
-    def on_send(data):
-        room = data['room']
-        sender = data['sender']
-        message = data['message']
-        
-        # 1. Generate Timestamp NOW
-        import datetime
-        timestamp = datetime.datetime.now().strftime("%I:%M %p") # "10:30 PM"
-        
-        # 2. Add it to the data we send back
-        data['timestamp'] = timestamp
-        
-        print(f"📩 Saving: {message} at {timestamp}")
-        
-        # 3. SAVE to Database (Update database.py to accept timestamp if needed, 
-        # or let it generate its own, but sending it to UI is key)
-        database.save_message(room, sender, message)
-        
-        # 4. SEND to everyone (now includes 'timestamp')
-        emit('receive_message', data, room=room)
+    def handle_message(data):
+        room = data.get('room')
+        sender = data.get('sender')
+        message = data.get('message')
+        media_type = data.get('media_type', 'text')
+        media_url = data.get('media_url')
+        enc_key = data.get('encryption_key')
+        enc_iv = data.get('encryption_iv')
+
+        timestamp = database.save_message(room, sender, message, media_type, media_url, enc_key, enc_iv)
+        emit('receive_message', {'sender': sender, 'message': message, 'timestamp': timestamp, 'media_type': media_type, 'media_url': media_url, 'encryption_key': enc_key, 'encryption_iv': enc_iv}, room=room)
+
+    @socketio.on('leave_room')
+    def handle_leave(data):
+        leave_room(data.get('room'))
