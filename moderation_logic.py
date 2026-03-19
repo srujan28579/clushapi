@@ -1,62 +1,76 @@
 # moderation_logic.py
-import cv2
-import pytesseract
+import easyocr
 import numpy as np
+import cv2
 import re
+import warnings
 
-# 🔴 TELL PYTHON WHERE TESSERACT IS INSTALLED
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+# Suppress PyTorch CPU warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
-def is_text_overlay(text):
-    """
-    THE ZERO TOLERANCE POLICY.
-    We don't care WHAT they wrote. If there is text in the image, we block it.
-    """
-    if not text or text.strip() == "": 
-        return False
-        
-    # Extract only letters and numbers (ignores OCR hallucination symbols like ~ * < >)
-    words = re.findall(r'[a-zA-Z0-9]+', text)
+reader = easyocr.Reader(['en'], gpu=False) 
+
+def is_scam_text(text):
+    text = text.lower()
     
-    # Filter out tiny 1-2 letter artifacts that Tesseract sometimes invents from background shadows
-    meaningful_words = [w for w in words if len(w) >= 3]
-    total_chars = sum(len(w) for w in words)
-    
-    # If the image contains ANY word 3 letters or longer, OR a total of more than 6 characters combined
-    if len(meaningful_words) > 0 or total_chars > 6:
-        print(f"🚨 Triggered: ZERO TEXT TOLERANCE. Found {total_chars} alphanumeric characters.", flush=True)
+    # 1. THE HANDLE CATCHER (@, _, ig:)
+    if re.search(r'[@©_]|\big[\s:\-]+|\bsnap[\s:\-]+|\bsc[\s:\-]+|\btele[\s:\-]+|\btg[\s:\-]+', text):
         return True
-        
+
+    words = text.split()
+    for word in words:
+        # 2. THE DOT CATCHER (e.g., srujxn.18)
+        if re.search(r'[a-z0-9]\.[a-z0-9]', word):
+            return True
+
+        # 3. ALPHANUMERIC MASHUP CATCHER (e.g., salilvi103)
+        has_letter = re.search(r'[a-z]', word)
+        has_number = re.search(r'[0-9]', word)
+
+        if has_letter and has_number:
+            if len(word) <= 5: continue
+            if re.search(r'(19|20)\d{2}', word): continue
+            if word.endswith('s') and word[:-1].isdigit(): continue
+            if re.search(r'\b\d+(st|nd|rd|th)\b', word): continue
+            return True
+
+    # 4. SMART PHONE NUMBER CATCHER
+    trick_text = text.replace('o', '0').replace('l', '1').replace('s', '5')
+    compact_text = re.sub(r'[\s\-\.\(\)\+]', '', trick_text)
+    if re.search(r'\d{8,}', compact_text):
+        return True
+
+    # 5. BLOCKED WORDS (Scam & Competitors)
+    blocked_words = [
+        'telegram', 'snapchat', 'instagram', 'whatsapp', 'tinder', 'bumble', 
+        'incall', 'outcall', 'ratecard', 'cashmeet', 'paytomeet', 'paid'
+    ]
+    if any(b in text for b in blocked_words):
+        return True
+
     return False
 
 def check_image_for_text(image_bytes):
-    """MULTI-PASS OCR: Scans 3 different ways to catch dark, bright, and shadowed text."""
     try:
         image_array = np.frombuffer(image_bytes, np.uint8)
         img = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-        
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
         
-        # PASS 1: Standard
-        text_standard = pytesseract.image_to_string(gray)
+        results_normal = reader.readtext(gray, detail=1)
+        extracted_words = [text.strip(".,'\"-~") for (bbox, text, prob) in results_normal if prob > 0.35]
+                
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        enhanced_gray = clahe.apply(gray)
+        results_enhanced = reader.readtext(enhanced_gray, detail=1)
         
-        # PASS 2: Inverted (Bright text on dark background)
-        inverted = cv2.bitwise_not(gray)
-        text_inverted = pytesseract.image_to_string(inverted)
+        extracted_words += [text.strip(".,'\"-~") for (bbox, text, prob) in results_enhanced if prob > 0.55]
+                
+        combined_text = " ".join(list(set(filter(None, extracted_words))))
         
-        # PASS 3: High Contrast Threshold (Shadows)
-        blur = cv2.GaussianBlur(gray, (5, 5), 0)
-        _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        text_thresh = pytesseract.image_to_string(thresh)
-        
-        combined_text = f"{text_standard} {text_inverted} {text_thresh}"
-        clean_print = re.sub(r'\n+', ' ', combined_text).strip()
-        print(f"🔍 OCR Multi-Pass Read: {clean_print}", flush=True)
-        
-        # Send it to the Zero Tolerance Executioner
-        return is_text_overlay(combined_text)
+        if combined_text.strip():
+            return is_scam_text(combined_text)
+        return False 
         
     except Exception as e:
-        print(f"❌ OCR Error: {e}", flush=True)
+        print(f"❌ EasyOCR Error: {e}", flush=True)
         return False
