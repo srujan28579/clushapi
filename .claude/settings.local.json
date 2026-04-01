@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/salil/OneDrive/Desktop/ClushServer/clush-api -type f -name *.json -o -name supabase* -o -name *.yaml -o -name *.yml)",
+      "Bash(ls c:/Users/salil/OneDrive/Desktop/ClushServer/clush-api/*.py)",
+      "Bash(npm --version)",
+      "Bash(npx --version)",
+      "Bash(scoop --version)",
+      "Bash(winget --version)",
+      "Bash(choco --version)"
+    ]
+  }
+}
