@@ -10,13 +10,19 @@ from flask import Flask, request, jsonify
 from flask_socketio import SocketIO
 from flasgger import Swagger
 from supabase import create_client, Client
+from dotenv import load_dotenv
 
 import chat_logic
 import database
 import moderation_logic
 
-SUPABASE_URL = "https://roblwklgvyvjrgvyumqp.supabase.co/"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJvYmx3a2xndnl2anJndnl1bXFwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MDM5NjQ5OCwiZXhwIjoyMDg1OTcyNDk4fQ.LZgKHjwngrnvO-lhvOTP2hyE68EiaMcJ9nPEhhlBS5s"
+load_dotenv()
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("Missing SUPABASE_URL or SUPABASE_KEY in environment")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = Flask(__name__)

@@ -1,15 +1,55 @@
-# Use a base image that ALREADY has dlib and face_recognition installed
-FROM animcogn/face_recognition:cpu
+FROM python:3.11-slim
 
-# Set up the working directory
+# System dependencies for dlib, face_recognition, opencv, easyocr
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    libopenblas-dev \
+    liblapack-dev \
+    libx11-dev \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copy your code to the container
-COPY . /app
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -U pip && \
+    pip install --no-cache-dir \
+        flask \
+        flask-socketio \
+        flasgger \
+        gunicorn \
+        eventlet \
+        supabase \
+        requests \
+        numpy \
+        opencv-python-headless \
+        imutils \
+        easyocr \
+        nudenet \
+        python-socketio[client] && \
+    pip install --no-cache-dir dlib && \
+    pip install --no-cache-dir face_recognition
 
-# Install ONLY the web frameworks (Flask, Supabase)
-# We do NOT install dlib or face_recognition here because they are already inside!
-RUN pip install flask gunicorn supabase requests imutils opencv-python-headless
+# Copy app code
+COPY . .
 
-# Start the server on port 10000
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:10000", "--timeout", "120"]
+# EasyOCR and NudeNet download models at runtime by default — pre-download them
+# so the first request isn't slow
+RUN python -c "import easyocr; easyocr.Reader(['en'], gpu=False)" || true
+RUN python -c "from nudenet import NudeDetector; NudeDetector()" || true
+
+EXPOSE 10000
+
+# Use eventlet worker for SocketIO support
+CMD ["gunicorn", "server:app", \
+     "--worker-class", "eventlet", \
+     "--workers", "1", \
+     "--bind", "0.0.0.0:10000", \
+     "--timeout", "180"]
