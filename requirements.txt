@@ -1,6 +1,14 @@
 flask
+flask-socketio
+python-dotenv
+flasgger
 gunicorn
 supabase
 requests
-imutils
+numpy
 opencv-python-headless
+face_recognition
+easyocr
+nudenet
+imutils
+python-socketio[client]
