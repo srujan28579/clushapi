@@ -47,9 +47,4 @@ RUN python -c "from nudenet import NudeDetector; NudeDetector()" || true
 
 EXPOSE 10000
 
-# Use eventlet worker for SocketIO support
-CMD ["gunicorn", "server:app", \
-     "--worker-class", "eventlet", \
-     "--workers", "1", \
-     "--bind", "0.0.0.0:10000", \
-     "--timeout", "180"]
+CMD ["uvicorn", "server:combined_app", "--host", "0.0.0.0", "--port", "10000", "--timeout-keep-alive", "180"]
