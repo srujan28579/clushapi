@@ -1,4 +1,8 @@
 # server.py
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 import os
 import cv2
 import face_recognition
@@ -145,10 +149,42 @@ async def verify_face(
         all_distances = await asyncio.to_thread(compare)
         best_distance = min(all_distances)
         score = round((1 - best_distance) * 100, 2)
-        is_match = bool(best_distance <= 0.45)
+        is_match = bool(best_distance <= 0.55)
 
-        print(f"✅ VERIFICATION COMPLETE: Match={is_match}, Score={score}%, Distance={best_distance:.4f}, Threshold=0.45", flush=True)
+        print(f"✅ VERIFICATION COMPLETE: Match={is_match}, Score={score}%, Distance={best_distance:.4f}, Threshold=0.55", flush=True)
         print(f"📊 Raw distances: {sorted([round(d, 4) for d in all_distances])}", flush=True)
+
+        # 6. Upload video to Supabase Storage for manual review
+        storage_path = f"{user_id}/{timestamp}.mp4"
+        try:
+            await asyncio.to_thread(
+                lambda: supabase.storage.from_("verification-videos").upload(
+                    storage_path,
+                    video_bytes,
+                    {"content-type": "video/mp4"},
+                )
+            )
+            video_url = supabase.storage.from_("verification-videos").get_public_url(storage_path)
+            print(f"📦 Video uploaded: {video_url}", flush=True)
+        except Exception as upload_err:
+            print(f"⚠️ Video upload failed (non-fatal): {upload_err}", flush=True)
+            video_url = None
+
+        # 7. Record verification result in DB
+        try:
+            await asyncio.to_thread(
+                lambda: supabase.table("verifications").insert({
+                    "user_id": user_id,
+                    "video_url": video_url,
+                    "match": is_match,
+                    "score": score,
+                    "verified_at": datetime.datetime.utcnow().isoformat(),
+                }).execute()
+            )
+            print("💾 Verification record saved.", flush=True)
+        except Exception as db_err:
+            print(f"⚠️ DB insert failed (non-fatal): {db_err}", flush=True)
+
         return {"match": is_match, "score": score}
 
     except Exception as e:

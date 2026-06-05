@@ -10,7 +10,7 @@ EVIDENCE_FOLDER = r'C:\Users\Public\Clush_Evidence'
 if not os.path.exists(EVIDENCE_FOLDER):
     os.makedirs(EVIDENCE_FOLDER)
 
-TOLERANCE = 0.45
+TOLERANCE = 0.55
 
 def _get_profile_encodings(profile_path):
     """Load profile image and return all face encodings from it."""
